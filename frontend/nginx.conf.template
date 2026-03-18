@@ -36,8 +36,11 @@ server {
     }
 
     # ── API proxy ───────────────────────────────────────────────────────────
+    # NOTE: nginx does not allow appending a URI path to a variable in proxy_pass.
+    # Using `set` to assign the variable allows nginx to accept it at startup.
     location /api/ {
-        proxy_pass         ${BACKEND_URL}/api/;
+        set $backend "${BACKEND_URL}";
+        proxy_pass         $backend;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -46,7 +49,8 @@ server {
 
     # ── WebSocket proxy ─────────────────────────────────────────────────────
     location /api/ws/ {
-        proxy_pass         ${BACKEND_URL}/api/ws/;
+        set $backend "${BACKEND_URL}";
+        proxy_pass         $backend;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    $http_upgrade;
         proxy_set_header   Connection "upgrade";

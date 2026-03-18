@@ -117,6 +117,28 @@ services:
         scope: RUN_TIME
         value: "false"
 
+      # Disable email verification until SMTP is configured
+      # Set to "true" once SMTP_HOST and credentials are filled in above
+      - key: EMAIL_VERIFICATION_ENABLED
+        scope: RUN_TIME
+        value: "false"
+
+      # Disable CAPTCHA until Cloudflare Turnstile keys are configured
+      # Set to "true" and fill in CAPTCHA_SECRET_KEY / CAPTCHA_SITE_KEY to enable
+      - key: CAPTCHA_ENABLED
+        scope: RUN_TIME
+        value: "false"
+      - key: CAPTCHA_PROVIDER
+        scope: RUN_TIME
+        value: "turnstile"
+      - key: CAPTCHA_SITE_KEY
+        scope: RUN_TIME
+        value: ""
+      - key: CAPTCHA_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+
   # ── Background Worker (arq + Redis) ─────────────────────────────────────────
   - name: worker
     github:

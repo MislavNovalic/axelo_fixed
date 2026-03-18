@@ -256,10 +256,15 @@ async function submit() {
     }
   } catch (e) {
     const raw = e.response?.data?.detail
+    const status = e?.response?.status
     const detail = Array.isArray(raw) ? raw.map(d => d.msg || d).join(', ') : (raw || '')
     if (detail === 'CAPTCHA_REQUIRED' || detail === 'CAPTCHA_INVALID') {
       error.value = 'CAPTCHA verification failed. Please try again.'
       resetCaptcha()
+    } else if (detail === 'CAPTCHA service not configured' || status === 503) {
+      error.value = 'Registration is temporarily unavailable. Please contact the administrator.'
+    } else if (status === 429) {
+      error.value = 'Too many attempts. Please wait a moment and try again.'
     } else {
       error.value = detail || 'Registration failed. Please try again.'
     }

@@ -231,14 +231,23 @@ async function submit() {
     }
   } catch (e) {
     const detail = e?.response?.data?.detail || ''
+    const status = e?.response?.status
     if (detail === 'EMAIL_NOT_VERIFIED') {
       unverified.value = true
       unverifiedEmail.value = email.value
+    } else if (detail === 'CAPTCHA_REQUIRED' || detail === 'CAPTCHA service not configured') {
+      error.value = 'Registration is temporarily unavailable. Please contact the administrator.'
+    } else if (status === 403) {
+      error.value = 'Your account is inactive or not yet verified.'
+    } else if (status === 429) {
+      error.value = 'Too many attempts. Please wait a moment and try again.'
+    } else if (status === 503) {
+      error.value = 'Service temporarily unavailable. Please try again shortly.'
     } else {
       error.value = 'Invalid email or password. Please try again.'
-      shaking.value = true
-      setTimeout(() => { shaking.value = false }, 600)
     }
+    shaking.value = true
+    setTimeout(() => { shaking.value = false }, 600)
   } finally { loading.value = false }
 }
 

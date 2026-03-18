@@ -1,0 +1,206 @@
+name: axelo
+
+# ── Managed Database ──────────────────────────────────────────────────────────
+databases:
+  - name: axelo-db
+    engine: PG
+    version: "16"
+    size: db-s-dev-database   # cheapest tier — upgrade for production
+    num_nodes: 1
+
+# ── Managed Redis ─────────────────────────────────────────────────────────────
+# Digital Ocean does not have a managed Redis in App Platform app.yaml natively.
+# Use a Redis add-on or provision a separate DO Managed Redis cluster,
+# then set REDIS_URL manually as a secret env var below.
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+
+  # ── Backend (FastAPI) ───────────────────────────────────────────────────────
+  - name: backend
+    github:
+      repo: MislavNovalic/Axelo
+      branch: claude/eloquent-goldstine
+      deploy_on_push: true
+    source_dir: backend
+    dockerfile_path: backend/Dockerfile
+
+    http_port: 8000
+    instance_size_slug: basic-xxs
+    instance_count: 1
+
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 30
+      period_seconds: 10
+      failure_threshold: 3
+
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${axelo-db.DATABASE_URL}
+
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: "REPLACE_ME_run_openssl_rand_hex_32"
+
+      - key: ENVIRONMENT
+        scope: RUN_TIME
+        value: production
+
+      - key: UPLOAD_DIR
+        scope: RUN_TIME
+        value: /uploads
+
+      # DO injects ${frontend.PUBLIC_URL} automatically once frontend service exists
+      - key: ALLOWED_ORIGINS
+        scope: RUN_TIME
+        value: ${frontend.PUBLIC_URL}
+
+      - key: FRONTEND_URL
+        scope: RUN_TIME
+        value: ${frontend.PUBLIC_URL}
+
+      # Redis — set this to your DO Managed Redis URL or Redis Cloud URL
+      - key: REDIS_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: "REPLACE_ME_redis://your-redis-host:6379/0"
+
+      # OAuth — fill in if using Google/GitHub login
+      - key: GOOGLE_CLIENT_ID
+        scope: RUN_TIME
+        value: ""
+      - key: GOOGLE_CLIENT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+      - key: GITHUB_CLIENT_ID
+        scope: RUN_TIME
+        value: ""
+      - key: GITHUB_CLIENT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+
+      # Email (SMTP) — fill in for email verification / notifications
+      - key: SMTP_HOST
+        scope: RUN_TIME
+        value: ""
+      - key: SMTP_PORT
+        scope: RUN_TIME
+        value: "587"
+      - key: SMTP_USERNAME
+        scope: RUN_TIME
+        value: ""
+      - key: SMTP_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+      - key: SMTP_FROM
+        scope: RUN_TIME
+        value: "noreply@axelo.dev"
+      - key: SMTP_FROM_NAME
+        scope: RUN_TIME
+        value: "Axelo"
+      - key: SMTP_TLS
+        scope: RUN_TIME
+        value: "true"
+
+      # AI — set ANTHROPIC_API_KEY to enable AI features
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+      - key: AI_ENABLED
+        scope: RUN_TIME
+        value: "false"
+
+  # ── Background Worker (arq + Redis) ─────────────────────────────────────────
+  - name: worker
+    github:
+      repo: MislavNovalic/Axelo
+      branch: claude/eloquent-goldstine
+      deploy_on_push: true
+    source_dir: backend
+    dockerfile_path: backend/Dockerfile
+
+    # Override the default CMD to run the arq worker instead of uvicorn
+    run_command: arq app.core.queue.WorkerSettings
+
+    instance_size_slug: basic-xxs
+    instance_count: 1
+
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${axelo-db.DATABASE_URL}
+
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: "REPLACE_ME_run_openssl_rand_hex_32"
+
+      - key: ENVIRONMENT
+        scope: RUN_TIME
+        value: production
+
+      - key: FRONTEND_URL
+        scope: RUN_TIME
+        value: ${frontend.PUBLIC_URL}
+
+      - key: REDIS_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: "REPLACE_ME_redis://your-redis-host:6379/0"
+
+      - key: SMTP_HOST
+        scope: RUN_TIME
+        value: ""
+      - key: SMTP_PORT
+        scope: RUN_TIME
+        value: "587"
+      - key: SMTP_USERNAME
+        scope: RUN_TIME
+        value: ""
+      - key: SMTP_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+      - key: SMTP_FROM
+        scope: RUN_TIME
+        value: "noreply@axelo.dev"
+      - key: SMTP_FROM_NAME
+        scope: RUN_TIME
+        value: "Axelo"
+      - key: SMTP_TLS
+        scope: RUN_TIME
+        value: "true"
+
+  # ── Frontend (Vue 3 + nginx) ─────────────────────────────────────────────────
+  - name: frontend
+    github:
+      repo: MislavNovalic/Axelo
+      branch: claude/eloquent-goldstine
+      deploy_on_push: true
+    source_dir: frontend
+    dockerfile_path: frontend/Dockerfile
+
+    http_port: 8080
+    instance_size_slug: basic-xxs
+    instance_count: 1
+
+    health_check:
+      http_path: /
+      initial_delay_seconds: 10
+      period_seconds: 10
+
+    envs:
+      # nginx entrypoint substitutes this into the config at startup
+      - key: BACKEND_URL
+        scope: RUN_TIME
+        value: ${backend.PRIVATE_URL}
+
+    routes:
+      - path: /

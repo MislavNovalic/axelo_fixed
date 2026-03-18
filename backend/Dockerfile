@@ -9,4 +9,6 @@ COPY . .
 
 RUN sed -i 's/\r//' start.sh && chmod +x start.sh
 
+EXPOSE 8000
+
 CMD ["sh", "start.sh"]

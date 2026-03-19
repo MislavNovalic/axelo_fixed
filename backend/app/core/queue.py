@@ -142,8 +142,17 @@ class WorkerSettings:
     Start with: arq app.core.queue.WorkerSettings
     """
     functions = [task_send_notification_email]
-    redis_settings = _redis_settings()
     max_jobs = 10
-    job_timeout = 30          # seconds per job before timeout
-    max_tries = 3             # retry failed jobs up to 3 times
-    keep_result = 3600        # keep job result in Redis for 1 hour
+    job_timeout = 30
+    max_tries = 3
+    keep_result = 3600
+
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    # redis_settings resolved lazily so an invalid/placeholder REDIS_URL
+    # does not crash the backend at import time.
+    @property
+    def redis_settings(self):
+        return _redis_settings()

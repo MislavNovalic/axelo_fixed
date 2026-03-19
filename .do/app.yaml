@@ -5,13 +5,8 @@ databases:
   - name: axelo-db
     engine: PG
     version: "16"
-    size: db-s-dev-database   # cheapest tier — upgrade for production
+    size: db-s-dev-database
     num_nodes: 1
-
-# ── Managed Redis ─────────────────────────────────────────────────────────────
-# Digital Ocean does not have a managed Redis in App Platform app.yaml natively.
-# Use a Redis add-on or provision a separate DO Managed Redis cluster,
-# then set REDIS_URL manually as a secret env var below.
 
 # ── Services ──────────────────────────────────────────────────────────────────
 services:
@@ -35,6 +30,10 @@ services:
       period_seconds: 10
       failure_threshold: 3
 
+    # Backend handles /api routes — DO load balancer routes to this service
+    routes:
+      - path: /api
+
     envs:
       - key: DATABASE_URL
         scope: RUN_TIME
@@ -53,39 +52,14 @@ services:
         scope: RUN_TIME
         value: /uploads
 
-      # CORS — include all origins the app is accessed from
-      # Add your custom domain here. ${frontend.PUBLIC_URL} is the DO auto-URL.
       - key: ALLOWED_ORIGINS
         scope: RUN_TIME
-        value: https://axelo.dev,https://www.axelo.dev,${frontend.PUBLIC_URL}
+        value: https://axelo.dev,https://www.axelo.dev,${APP_URL}
 
       - key: FRONTEND_URL
         scope: RUN_TIME
         value: https://axelo.dev
 
-      # Redis — set this to your DO Managed Redis URL or Redis Cloud URL
-      - key: REDIS_URL
-        scope: RUN_TIME
-        type: SECRET
-        value: "REPLACE_ME_redis://your-redis-host:6379/0"
-
-      # OAuth — fill in if using Google/GitHub login
-      - key: GOOGLE_CLIENT_ID
-        scope: RUN_TIME
-        value: ""
-      - key: GOOGLE_CLIENT_SECRET
-        scope: RUN_TIME
-        type: SECRET
-        value: ""
-      - key: GITHUB_CLIENT_ID
-        scope: RUN_TIME
-        value: ""
-      - key: GITHUB_CLIENT_SECRET
-        scope: RUN_TIME
-        type: SECRET
-        value: ""
-
-      # Email (SMTP) — fill in for email verification / notifications
       - key: SMTP_HOST
         scope: RUN_TIME
         value: ""
@@ -109,7 +83,6 @@ services:
         scope: RUN_TIME
         value: "true"
 
-      # AI — set ANTHROPIC_API_KEY to enable AI features
       - key: ANTHROPIC_API_KEY
         scope: RUN_TIME
         type: SECRET
@@ -118,28 +91,19 @@ services:
         scope: RUN_TIME
         value: "false"
 
-      # Disable email verification until SMTP is configured
-      # Set to "true" once SMTP_HOST and credentials are filled in above
       - key: EMAIL_VERIFICATION_ENABLED
         scope: RUN_TIME
         value: "false"
 
-      # Disable CAPTCHA until Cloudflare Turnstile keys are configured
-      # Set to "true" and fill in CAPTCHA_SECRET_KEY / CAPTCHA_SITE_KEY to enable
       - key: CAPTCHA_ENABLED
         scope: RUN_TIME
         value: "false"
-      - key: CAPTCHA_PROVIDER
+
+      - key: REDIS_URL
         scope: RUN_TIME
-        value: "turnstile"
-      - key: CAPTCHA_SITE_KEY
-        scope: RUN_TIME
-        value: ""
-      - key: CAPTCHA_SECRET_KEY
-        scope: RUN_TIME
-        type: SECRET
-        value: ""
-  # ── Frontend (Vue 3 + nginx) ─────────────────────────────────────────────────
+        value: "redis://localhost:6379/0"
+
+  # ── Frontend (Vue 3 + nginx static) ─────────────────────────────────────────
   - name: frontend
     github:
       repo: MislavNovalic/axelo_fixed
@@ -157,21 +121,6 @@ services:
       initial_delay_seconds: 10
       period_seconds: 10
 
-    envs:
-      # nginx entrypoint substitutes this into the config at startup
-      - key: BACKEND_URL
-        scope: RUN_TIME
-        value: ${backend.PRIVATE_URL}
-
-      # ── CAPTCHA (Cloudflare Turnstile) ──────────────────────────────────────
-      # To enable CAPTCHA on the register page:
-      # 1. Go to https://dash.cloudflare.com → Turnstile → Add site → axelo.dev
-      # 2. Copy the Site Key (public) and Secret Key
-      # 3. Set CAPTCHA_SITE_KEY here (public — safe to expose)
-      # 4. Set CAPTCHA_SECRET_KEY + CAPTCHA_ENABLED=true in the backend envs above
-      - key: VITE_CAPTCHA_SITE_KEY
-        scope: BUILD_TIME
-        value: ""
-
+    # Frontend handles everything except /api (which goes to backend above)
     routes:
       - path: /

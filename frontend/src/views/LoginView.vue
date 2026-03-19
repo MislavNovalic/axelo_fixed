@@ -38,6 +38,12 @@
         <h1 class="animate-field" style="--delay:0.2s">Sign in to Axelo</h1>
         <p class="subtitle animate-field" style="--delay:0.3s">Enter your credentials to continue</p>
 
+        <!-- Registration closed notice -->
+        <div class="reg-notice animate-field" style="--delay:0.32s">
+          <span class="reg-notice-icon">ℹ️</span>
+          <span>New registrations are <strong>temporarily closed</strong> while we set up email verification. Check back soon.</span>
+        </div>
+
         <transition name="error-pop">
           <div v-if="error" class="error-msg"><span class="error-icon">⚠</span> {{ error }}</div>
         </transition>
@@ -280,6 +286,15 @@ function shake() {
 .auth-switch { text-align: center; margin-top: 1.25rem; font-size: 0.85rem; color: var(--text2); }
 .auth-switch a { color: var(--accent2); font-weight: 500; text-decoration: none; }
 .auth-switch a:hover { text-decoration: underline; }
+.reg-notice {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.25);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 1.25rem;
+  font-size: 0.8rem; color: var(--text2); line-height: 1.5;
+}
+.reg-notice-icon { font-size: 0.95rem; flex-shrink: 0; margin-top: 1px; }
+.reg-notice strong { color: var(--text); font-weight: 600; }
+
 .verify-banner { display: flex; align-items: center; gap: 12px; background: rgba(255,184,0,0.08); border: 1px solid rgba(255,184,0,0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 1.1rem; }
 .verify-banner-icon { font-size: 1.2rem; flex-shrink: 0; }
 .verify-banner-body { flex: 1; min-width: 0; }

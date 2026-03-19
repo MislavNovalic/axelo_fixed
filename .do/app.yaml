@@ -31,8 +31,11 @@ services:
       failure_threshold: 3
 
     # Backend handles /api routes — DO load balancer routes to this service
+    # preserve_path_prefix: true ensures /api/auth/login reaches FastAPI as
+    # /api/auth/login (not /auth/login which would be a 404)
     routes:
       - path: /api
+        preserve_path_prefix: true
 
     envs:
       - key: DATABASE_URL

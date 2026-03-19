@@ -19,8 +19,8 @@ services:
   # ── Backend (FastAPI) ───────────────────────────────────────────────────────
   - name: backend
     github:
-      repo: MislavNovalic/Axelo
-      branch: claude/eloquent-goldstine
+      repo: MislavNovalic/axelo_fixed
+      branch: main
       deploy_on_push: true
     source_dir: backend
     dockerfile_path: backend/Dockerfile
@@ -143,8 +143,8 @@ services:
   # ── Background Worker (arq + Redis) ─────────────────────────────────────────
   - name: worker
     github:
-      repo: MislavNovalic/Axelo
-      branch: claude/eloquent-goldstine
+      repo: MislavNovalic/axelo_fixed
+      branch: main
       deploy_on_push: true
     source_dir: backend
     dockerfile_path: backend/Dockerfile
@@ -204,8 +204,8 @@ services:
   # ── Frontend (Vue 3 + nginx) ─────────────────────────────────────────────────
   - name: frontend
     github:
-      repo: MislavNovalic/Axelo
-      branch: claude/eloquent-goldstine
+      repo: MislavNovalic/axelo_fixed
+      branch: main
       deploy_on_push: true
     source_dir: frontend
     dockerfile_path: frontend/Dockerfile

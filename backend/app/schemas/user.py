@@ -10,7 +10,6 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    captcha_token: Optional[str] = None   # Cloudflare Turnstile / hCaptcha response token
 
 
 class UserUpdate(BaseModel):

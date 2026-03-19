@@ -33,7 +33,7 @@ from app.core.auth import (
 from app.core.deps import get_current_user
 from app.core.security import (
     limiter, validate_password, log_auth_failure, log_auth_success,
-    MAX_PROJECT_NAME, clamp_str, verify_captcha,
+    MAX_PROJECT_NAME, clamp_str,
 )
 from app.core.email import send_verification_email
 from app.config import settings
@@ -186,10 +186,6 @@ def _do_login(request: Request, email_raw: str, password: str, db: Session):
 @limiter.limit("10/minute")
 async def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
-
-    # OWASP A07: verify CAPTCHA server-side before any DB work
-    # A bot that strips the widget from the DOM still hits this check
-    await verify_captcha(user_in.captcha_token, ip)
 
     errors = validate_password(user_in.password)
     if errors:

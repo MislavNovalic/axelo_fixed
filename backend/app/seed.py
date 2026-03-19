@@ -457,7 +457,8 @@ def seed():
         run(db)
     except Exception as exc:
         db.rollback()
-        print(f"❌ Seed failed: {exc}")
-        raise
+        print(f"⚠️  Seed warning: {exc}")
+        print("   App will start without demo data.")
+        # Non-fatal — do not re-raise. The app must start even if seed fails.
     finally:
         db.close()

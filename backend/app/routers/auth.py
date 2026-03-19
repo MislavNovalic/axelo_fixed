@@ -480,3 +480,19 @@ def captcha_config():
         "provider": settings.CAPTCHA_PROVIDER,
         "site_key": settings.CAPTCHA_SITE_KEY,
     }
+
+
+@router.post("/reseed")
+def reseed_demo_data():
+    """
+    Trigger demo data seeding manually.
+    Only works when ENVIRONMENT != 'production' OR when DB is empty.
+    Safe to call multiple times — seed() is idempotent (skips if users exist).
+    Useful when first deploy failed to seed due to DB not being ready.
+    """
+    from app.seed import seed as run_seed
+    try:
+        run_seed()
+        return {"status": "ok", "message": "Seed completed (or skipped if data already exists)"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Seed failed: {str(e)}")

@@ -224,5 +224,15 @@ services:
         scope: RUN_TIME
         value: ${backend.PRIVATE_URL}
 
+      # ── CAPTCHA (Cloudflare Turnstile) ──────────────────────────────────────
+      # To enable CAPTCHA on the register page:
+      # 1. Go to https://dash.cloudflare.com → Turnstile → Add site → axelo.dev
+      # 2. Copy the Site Key (public) and Secret Key
+      # 3. Set CAPTCHA_SITE_KEY here (public — safe to expose)
+      # 4. Set CAPTCHA_SECRET_KEY + CAPTCHA_ENABLED=true in the backend envs above
+      - key: VITE_CAPTCHA_SITE_KEY
+        scope: BUILD_TIME
+        value: ""
+
     routes:
       - path: /

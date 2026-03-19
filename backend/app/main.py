@@ -25,9 +25,11 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SecurityHeadersMiddleware)
 
-ALLOWED_ORIGINS = os.getenv(
+ALLOWED_ORIGINS_ENV = os.getenv(
     "ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000"
-).split(",")
+)
+# Strip whitespace from each origin (env vars sometimes have spaces after commas)
+ALLOWED_ORIGINS = [o.strip() for o in ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,

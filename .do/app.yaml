@@ -53,14 +53,15 @@ services:
         scope: RUN_TIME
         value: /uploads
 
-      # DO injects ${frontend.PUBLIC_URL} automatically once frontend service exists
+      # CORS — include all origins the app is accessed from
+      # Add your custom domain here. ${frontend.PUBLIC_URL} is the DO auto-URL.
       - key: ALLOWED_ORIGINS
         scope: RUN_TIME
-        value: ${frontend.PUBLIC_URL}
+        value: https://axelo.dev,https://www.axelo.dev,${frontend.PUBLIC_URL}
 
       - key: FRONTEND_URL
         scope: RUN_TIME
-        value: ${frontend.PUBLIC_URL}
+        value: https://axelo.dev
 
       # Redis — set this to your DO Managed Redis URL or Redis Cloud URL
       - key: REDIS_URL

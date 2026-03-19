@@ -24,7 +24,20 @@ logging.basicConfig(
 )
 
 # ── Rate limiter (shared instance) ────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+
+def _get_real_ip(request: Request) -> str:
+    """
+    Get the real client IP when running behind DO's load balancer.
+    DO sets X-Forwarded-For. Take the first (leftmost) IP = original client.
+    Falls back to request.client.host if the header is absent.
+    """
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_get_real_ip, default_limits=["200/minute"])
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     logger.warning(f"Rate limit exceeded: {request.client.host} {request.url.path}")

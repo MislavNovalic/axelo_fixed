@@ -17,13 +17,8 @@
           <p :key="currentMotto">{{ mottos[currentMotto].sub }}</p>
         </transition>
         <div class="motto-dots">
-          <span
-            v-for="(_, i) in mottos"
-            :key="i"
-            class="motto-dot"
-            :class="{ active: i === currentMotto }"
-            @click="currentMotto = i"
-          ></span>
+          <span v-for="(_, i) in mottos" :key="i" class="motto-dot"
+            :class="{ active: i === currentMotto }" @click="currentMotto = i"></span>
         </div>
         <div class="feature-pills">
           <div class="pill" style="--delay:0.5s"><span class="dot" style="background:#10b981"></span> Kanban Boards</div>
@@ -87,17 +82,17 @@
           <span v-else class="btn-loader"><span></span><span class="dot-2"></span><span class="dot-3"></span></span>
         </button>
 
-        <div class="demo-hint animate-field" style="--delay:0.6s">
+        <div class="demo-hint animate-field" style="--delay:0.62s">
           <span class="hint-label">Demo</span>
           <button class="hint-btn" @click="fillDemo">Click to fill demo credentials</button>
         </div>
 
-        <div class="auth-switch animate-field" style="--delay:0.75s">
+        <div class="auth-switch animate-field" style="--delay:0.68s">
           Don't have an account? <router-link to="/register">Sign up free</router-link>
         </div>
       </div>
 
-      <!-- Step 2: 2FA TOTP challenge -->
+      <!-- Step 2: 2FA TOTP -->
       <div v-if="step === 'totp'" class="auth-card" :class="{ shake: shaking }">
         <div class="card-eyebrow">Two-Factor Auth</div>
         <h1>Enter your code</h1>
@@ -137,75 +132,46 @@ import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/api'
 
 const mottos = [
-  {
-    headline: 'Ship projects',
-    highlight: 'without the chaos.',
-    sub: 'The open-source project tracker built for teams who want to move fast — without the Jira tax.',
-  },
-  {
-    headline: 'Plan sprints,',
-    highlight: 'ship with confidence.',
-    sub: 'Powerful sprint planning and Kanban boards that keep your team aligned from kickoff to deploy.',
-  },
-  {
-    headline: 'Track every issue,',
-    highlight: 'miss nothing.',
-    sub: 'Capture bugs, features, and tasks in one place — with real-time updates and full team visibility.',
-  },
-  {
-    headline: 'Your team,',
-    highlight: 'your rules.',
-    sub: 'Flexible team roles and self-hostable infrastructure — total control over your workflow and data.',
-  },
-  {
-    headline: 'Open source,',
-    highlight: 'built to last.',
-    sub: 'MIT licensed, FastAPI + Vue 3 powered. Extend it, fork it, own it — no vendor lock-in, ever.',
-  },
+  { headline: 'Ship projects',    highlight: 'without the chaos.',      sub: 'The open-source project tracker built for teams who want to move fast — without the Jira tax.' },
+  { headline: 'Plan sprints,',    highlight: 'ship with confidence.',    sub: 'Powerful sprint planning and Kanban boards that keep your team aligned from kickoff to deploy.' },
+  { headline: 'Track every issue,', highlight: 'miss nothing.',          sub: 'Capture bugs, features, and tasks in one place — with real-time updates and full team visibility.' },
+  { headline: 'Your team,',       highlight: 'your rules.',              sub: 'Flexible team roles and self-hostable infrastructure — total control over your workflow and data.' },
+  { headline: 'Open source,',     highlight: 'built to last.',           sub: 'MIT licensed, FastAPI + Vue 3 powered. Extend it, fork it, own it — no vendor lock-in, ever.' },
 ]
 
 const currentMotto = ref(0)
 let mottoTimer = null
+onMounted(() => { mottoTimer = setInterval(() => { currentMotto.value = (currentMotto.value + 1) % mottos.length }, 4000) })
+onUnmounted(() => clearInterval(mottoTimer))
 
-onMounted(() => {
-  mottoTimer = setInterval(() => {
-    currentMotto.value = (currentMotto.value + 1) % mottos.length
-  }, 4000)
-})
-
-onUnmounted(() => {
-  clearInterval(mottoTimer)
-})
-
-const router = useRouter()
-const auth = useAuthStore()
-
-const step = ref('credentials')
-const email = ref('')
+const router   = useRouter()
+const auth     = useAuthStore()
+const step     = ref('credentials')
+const email    = ref('')
 const password = ref('')
 const totpCode = ref('')
-const tempToken = ref('')
-const loading = ref(false)
-const error = ref('')
-const unverified = ref(false)
+const tempToken    = ref('')
+const loading      = ref(false)
+const error        = ref('')
+const unverified   = ref(false)
 const unverifiedEmail = ref('')
-const resendSent = ref(false)
-const shaking = ref(false)
+const resendSent   = ref(false)
+const shaking      = ref(false)
 const emailFocused = ref(false)
-const passFocused = ref(false)
-const codeFocused = ref(false)
-const showPass = ref(false)
+const passFocused  = ref(false)
+const codeFocused  = ref(false)
+const showPass     = ref(false)
 
 function fillDemo() {
-  email.value = 'alex@axelo.dev'
+  email.value    = 'alex@axelo.dev'
   password.value = 'password123'
 }
 
 async function submit() {
-  if (!email.value || !password.value) return
+  if (!email.value || !password.value) { error.value = 'Please enter your email and password.'; shake(); return }
   loading.value = true; error.value = ''; unverified.value = false
   try {
-    const result = await auth.login(email.value, password.value)
+    const result = await auth.login(email.value.trim().toLowerCase(), password.value)
     if (result?.requires_2fa) {
       tempToken.value = result.temp_token
       step.value = 'totp'
@@ -216,21 +182,18 @@ async function submit() {
     const detail = e?.response?.data?.detail || ''
     const status = e?.response?.status
     if (detail === 'EMAIL_NOT_VERIFIED') {
-      unverified.value = true
+      unverified.value      = true
       unverifiedEmail.value = email.value
-    } else if (detail === 'CAPTCHA_REQUIRED' || detail === 'CAPTCHA service not configured') {
-      error.value = 'Registration is temporarily unavailable. Please contact the administrator.'
+    } else if (status === 401 || detail === 'Invalid credentials') {
+      error.value = 'Invalid email or password. Please try again.'
     } else if (status === 403) {
       error.value = 'Your account is inactive or not yet verified.'
     } else if (status === 429) {
       error.value = 'Too many attempts. Please wait a moment and try again.'
-    } else if (status === 503) {
-      error.value = 'Service temporarily unavailable. Please try again shortly.'
     } else {
-      error.value = 'Invalid email or password. Please try again.'
+      error.value = detail || 'Sign in failed. Please try again.'
     }
-    shaking.value = true
-    setTimeout(() => { shaking.value = false }, 600)
+    shake()
   } finally { loading.value = false }
 }
 
@@ -242,8 +205,7 @@ async function submitTotp() {
     router.push('/')
   } catch {
     error.value = 'Invalid code. Please try again.'
-    shaking.value = true
-    setTimeout(() => { shaking.value = false }, 600)
+    shake()
   } finally { loading.value = false }
 }
 
@@ -252,66 +214,33 @@ async function resendVerification() {
   resendSent.value = true
 }
 
+function shake() {
+  shaking.value = true
+  setTimeout(() => { shaking.value = false }, 600)
+}
 </script>
 
 <style scoped>
 .auth-screen { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
-.auth-left {
-  background: var(--bg2); border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; justify-content: space-between;
-  padding: 2.5rem; position: relative; overflow: hidden;
-}
-.auth-left::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(135deg, rgba(16,185,129,0.12) 0%, transparent 60%),
-              radial-gradient(ellipse at 20% 80%, rgba(16,185,129,0.08) 0%, transparent 60%);
-}
-.grid-texture {
-  position: absolute; inset: 0; pointer-events: none;
-  background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-  background-size: 40px 40px;
-}
+.auth-left { background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; justify-content: space-between; padding: 2.5rem; position: relative; overflow: hidden; }
+.auth-left::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(135deg, rgba(16,185,129,0.12) 0%, transparent 60%), radial-gradient(ellipse at 20% 80%, rgba(16,185,129,0.08) 0%, transparent 60%); }
+.grid-texture { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px); background-size: 40px 40px; }
 .auth-logo { display: flex; align-items: center; gap: 10px; position: relative; z-index: 1; }
-.logo-mark {
-  width: 36px; height: 36px; background: var(--accent); border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-display); font-weight: 800; font-size: 18px; color: #fff;
-  box-shadow: 0 0 24px var(--accent-glow); animation: logoPulse 3s ease-in-out infinite;
-}
-@keyframes logoPulse {
-  0%,100% { box-shadow: 0 0 16px var(--accent-glow); }
-  50% { box-shadow: 0 0 32px var(--accent-glow), 0 0 8px rgba(16,185,129,0.4); }
-}
+.logo-mark { width: 36px; height: 36px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 800; font-size: 18px; color: #fff; box-shadow: 0 0 24px var(--accent-glow); animation: logoPulse 3s ease-in-out infinite; }
+@keyframes logoPulse { 0%,100% { box-shadow: 0 0 16px var(--accent-glow); } 50% { box-shadow: 0 0 32px var(--accent-glow), 0 0 8px rgba(16,185,129,0.4); } }
 .logo-name { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
 .auth-hero { position: relative; z-index: 1; }
-.auth-hero h2 {
-  font-family: var(--font-display); font-size: 2.6rem; font-weight: 800;
-  line-height: 1.1; letter-spacing: -0.04em; color: var(--text); margin-bottom: 1rem;
-}
+.auth-hero h2 { font-family: var(--font-display); font-size: 2.6rem; font-weight: 800; line-height: 1.1; letter-spacing: -0.04em; color: var(--text); margin-bottom: 1rem; }
 .auth-hero h2 span { color: var(--accent2); }
 .auth-hero p { font-size: 0.95rem; color: var(--text2); line-height: 1.6; max-width: 320px; }
 .feature-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 1.5rem; }
-.pill {
-  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
-  border-radius: 100px; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
-  font-size: 0.78rem; color: var(--text2);
-  opacity: 0; animation: fadeUp 0.5s ease forwards; animation-delay: var(--delay, 0s);
-}
+.pill { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 100px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); font-size: 0.78rem; color: var(--text2); opacity: 0; animation: fadeUp 0.5s ease forwards; animation-delay: var(--delay, 0s); }
 .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .auth-footer { font-size: 0.72rem; color: var(--text3); position: relative; z-index: 1; }
 .auth-right { display: flex; align-items: center; justify-content: center; padding: 2rem; background: var(--bg); }
-.auth-card {
-  width: 100%; max-width: 420px;
-  background: var(--bg2); border: 1px solid var(--border); border-radius: 20px;
-  padding: 2.5rem; box-shadow: 0 24px 48px rgba(0,0,0,0.2);
-}
+.auth-card { width: 100%; max-width: 420px; background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 2.5rem; box-shadow: 0 24px 48px rgba(0,0,0,0.2); }
 .auth-card.shake { animation: shake 0.5s ease; }
-@keyframes shake {
-  0%,100% { transform: translateX(0); }
-  20%,60% { transform: translateX(-6px); }
-  40%,80% { transform: translateX(6px); }
-}
+@keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } }
 .card-eyebrow { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent2); margin-bottom: 0.4rem; }
 .auth-card h1 { font-family: var(--font-display); font-size: 1.9rem; font-weight: 800; letter-spacing: -0.035em; color: var(--text); margin-bottom: 0.35rem; line-height: 1.1; }
 .subtitle { font-size: 0.88rem; color: var(--text2); margin-bottom: 2rem; }
@@ -344,55 +273,32 @@ async function resendVerification() {
 .btn-loader span { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: bounce 0.8s ease-in-out infinite; }
 .dot-2 { animation-delay: 0.15s !important; } .dot-3 { animation-delay: 0.3s !important; }
 @keyframes bounce { 0%,60%,100% { transform: translateY(0); opacity: 0.6; } 30% { transform: translateY(-7px); opacity: 1; } }
-.sso-divider { display: flex; align-items: center; gap: 10px; margin: 1.2rem 0 0.8rem; font-size: 0.75rem; color: var(--text3); }
-.sso-divider::before,.sso-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.sso-row { display: flex; gap: 10px; margin-bottom: 1rem; }
-.sso-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: 1.5px solid var(--border2); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 0.85rem; font-weight: 600; text-decoration: none; transition: border-color 0.2s, background 0.2s; cursor: pointer; }
-.sso-btn:hover { border-color: var(--accent); background: rgba(16,185,129,0.06); }
-.demo-hint { display: flex; align-items: center; gap: 8px; margin-top: 1rem; padding: 8px 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; }
+.demo-hint { display: flex; align-items: center; gap: 8px; margin-top: 1rem; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
 .hint-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent2); background: rgba(16,185,129,0.1); padding: 2px 7px; border-radius: 4px; flex-shrink: 0; }
 .hint-btn { background: none; border: none; color: var(--text3); font-size: 0.78rem; cursor: pointer; font-family: var(--font-mono); padding: 0; text-align: left; transition: color 0.15s; }
 .hint-btn:hover { color: var(--text2); }
 .auth-switch { text-align: center; margin-top: 1.25rem; font-size: 0.85rem; color: var(--text2); }
 .auth-switch a { color: var(--accent2); font-weight: 500; text-decoration: none; }
 .auth-switch a:hover { text-decoration: underline; }
-
-.verify-banner {
-  display: flex; align-items: center; gap: 12px;
-  background: rgba(255,184,0,0.08); border: 1px solid rgba(255,184,0,0.25);
-  border-radius: 8px; padding: 10px 14px; margin-bottom: 1.1rem;
-}
+.verify-banner { display: flex; align-items: center; gap: 12px; background: rgba(255,184,0,0.08); border: 1px solid rgba(255,184,0,0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 1.1rem; }
 .verify-banner-icon { font-size: 1.2rem; flex-shrink: 0; }
 .verify-banner-body { flex: 1; min-width: 0; }
 .verify-banner-title { font-size: 0.82rem; font-weight: 700; color: #ffb800; }
 .verify-banner-sub { font-size: 0.76rem; color: var(--text3); margin-top: 1px; }
-.verify-resend-btn {
-  flex-shrink: 0; padding: 5px 12px; background: rgba(255,184,0,0.15);
-  border: 1px solid rgba(255,184,0,0.3); border-radius: 6px;
-  color: #ffb800; font-size: 0.78rem; font-weight: 700; cursor: pointer;
-}
+.verify-resend-btn { flex-shrink: 0; padding: 5px 12px; background: rgba(255,184,0,0.15); border: 1px solid rgba(255,184,0,0.3); border-radius: 6px; color: #ffb800; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
 .verify-resend-btn:hover:not(:disabled) { background: rgba(255,184,0,0.25); }
 .verify-resend-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-/* Motto rotation transitions */
 .motto-enter-active { transition: opacity 0.5s ease, transform 0.5s ease; }
 .motto-leave-active { transition: opacity 0.35s ease, transform 0.35s ease; }
 .motto-enter-from { opacity: 0; transform: translateY(14px); }
 .motto-leave-to  { opacity: 0; transform: translateY(-10px); }
-
 .motto-sub-enter-active { transition: opacity 0.5s ease 0.1s, transform 0.5s ease 0.1s; }
 .motto-sub-leave-active { transition: opacity 0.3s ease; }
 .motto-sub-enter-from { opacity: 0; transform: translateY(10px); }
 .motto-sub-leave-to  { opacity: 0; }
-
-/* Indicator dots */
 .motto-dots { display: flex; gap: 6px; margin-top: 1.25rem; }
-.motto-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: rgba(255,255,255,0.15); cursor: pointer;
-  transition: background 0.3s, transform 0.3s;
-}
+.motto-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.15); cursor: pointer; transition: background 0.3s, transform 0.3s; }
 .motto-dot.active { background: var(--accent2); transform: scale(1.4); }
 .motto-dot:hover:not(.active) { background: rgba(255,255,255,0.35); }
-
+@media (max-width: 640px) { .auth-screen { grid-template-columns: 1fr; } .auth-left { display: none; } }
 </style>

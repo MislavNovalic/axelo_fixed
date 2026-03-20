@@ -121,11 +121,34 @@ def _do_login(request: Request, email_raw: str, password: str, db: Session):
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
-    # Registration is currently closed. Remove this block to re-enable.
-    raise HTTPException(
-        status_code=503,
-        detail="REGISTRATION_CLOSED"
+    email = user_in.email.lower().strip()
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="EMAIL_TAKEN")
+
+    err = validate_password(user_in.password)
+    if err:
+        raise HTTPException(status_code=422, detail=err)
+
+    full_name = clamp_str(user_in.full_name.strip(), MAX_PROJECT_NAME)
+    user = User(
+        email=email,
+        full_name=full_name,
+        hashed_password=hash_password(user_in.password),
+        is_active=True,
+        email_verified=not settings.EMAIL_VERIFICATION_ENABLED,
     )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    if settings.EMAIL_VERIFICATION_ENABLED:
+        raw_token = _issue_verification_token(user, db)
+        try:
+            await send_verification_email(user.email, user.full_name, raw_token)
+        except Exception:
+            pass  # Don't block registration if email fails
+
+    return user
 
 
 @router.get("/verify-email")

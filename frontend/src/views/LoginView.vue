@@ -210,8 +210,17 @@ async function submitTotp() {
 }
 
 async function resendVerification() {
-  try { await authApi.resendVerification(unverifiedEmail.value) } catch { /* enumeration-safe */ }
-  resendSent.value = true
+  try {
+    await authApi.resendVerification(unverifiedEmail.value)
+    resendSent.value = true
+  } catch (e) {
+    const detail = e?.response?.data?.detail || ''
+    if (detail === 'EMAIL_SEND_FAILED') {
+      error.value = 'Failed to send verification email. Please check SMTP settings.'
+    } else {
+      resendSent.value = true  // enumeration-safe for other errors
+    }
+  }
 }
 
 function shake() {

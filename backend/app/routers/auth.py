@@ -178,15 +178,38 @@ def verify_email(token: str, db: Session = Depends(get_db)):
 @router.post("/resend-verification")
 @limiter.limit("3/hour")
 async def resend_verification(request: Request, body: ResendBody, db: Session = Depends(get_db)):
+    import logging
+    logger = logging.getLogger(__name__)
     email = body.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
     if user and not user.email_verified and user.hashed_password:
         raw_token = _issue_verification_token(user, db)
         try:
             await send_verification_email(user.email, user.full_name, raw_token)
-        except Exception:
-            pass
+            logger.info("Verification email sent to %s", email)
+        except Exception as exc:
+            logger.error("Failed to send verification email to %s: %s", email, exc)
+            raise HTTPException(status_code=500, detail="EMAIL_SEND_FAILED")
     return {"message": "If that email is registered and unverified, a new link has been sent."}
+
+
+@router.post("/test-email")
+async def test_email(request: Request, body: ResendBody, current_user: "User" = Depends(get_current_user)):
+    """Send a test email to verify SMTP configuration. Requires authentication."""
+    import logging
+    from app.config import settings as s
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "SMTP config: host=%s port=%s tls=%s from=%s frontend_url=%s",
+        s.SMTP_HOST, s.SMTP_PORT, s.SMTP_TLS, s.SMTP_FROM, s.FRONTEND_URL,
+    )
+    if not s.SMTP_HOST:
+        raise HTTPException(status_code=503, detail="SMTP_NOT_CONFIGURED")
+    try:
+        await send_verification_email(body.email, current_user.full_name, "test-token-not-valid")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"EMAIL_SEND_FAILED: {exc}")
+    return {"message": f"Test email sent to {body.email}"}
 
 
 @router.post("/login", response_model=None)

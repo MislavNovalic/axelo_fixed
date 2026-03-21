@@ -47,6 +47,16 @@ services:
       AI_ENABLED: "true"
       # Phase 5 — Redis
       REDIS_URL: "redis://redis:6379/0"
+      # Email — set RESEND_API_KEY to use Resend (recommended), or fill SMTP_* for other providers
+      EMAIL_VERIFICATION_ENABLED: "true"
+      RESEND_API_KEY: ""
+      SMTP_HOST: ""
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM: "noreply@yourdomain.com"
+      SMTP_FROM_NAME: "Axelo"
+      SMTP_TLS: "true"
     depends_on:
       db:
         condition: service_healthy
@@ -76,7 +86,8 @@ services:
       ENVIRONMENT: development
       FRONTEND_URL: "http://localhost:4173"
       REDIS_URL: "redis://redis:6379/0"
-      # Email (SMTP) — same as backend
+      # Email — same as backend
+      RESEND_API_KEY: ""
       SMTP_HOST: ""
       SMTP_PORT: "587"
       SMTP_USERNAME: ""

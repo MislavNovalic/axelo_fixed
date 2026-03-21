@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     IMPORT_MAX_ISSUES: int = 5000
     IMPORT_MAX_MEMBERS: int = 500
 
-    # Email verification
+    # Email — Resend API (preferred) or SMTP fallback
+    RESEND_API_KEY: str = ""          # set this to use Resend SDK (recommended)
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""

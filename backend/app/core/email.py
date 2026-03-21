@@ -173,9 +173,30 @@ _GENERIC_NOTIF_BODY = """\
 
 
 async def _send(to_email: str, subject: str, html: str, plain: str) -> None:
-    """Low-level async SMTP send. Raises on failure."""
+    """Low-level send — uses Resend SDK if RESEND_API_KEY is set, else SMTP."""
+
+    # ── Resend SDK path ──────────────────────────────────────────────────────
+    if settings.RESEND_API_KEY:
+        import resend as _resend
+        _resend.api_key = settings.RESEND_API_KEY
+        from_addr = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM}>"
+        try:
+            _resend.Emails.send({
+                "from": from_addr,
+                "to": [to_email],
+                "subject": subject,
+                "html": html,
+                "text": plain,
+            })
+            logger.info("Email sent via Resend: subject=%r to=%s", subject, to_email)
+        except Exception:
+            logger.exception("Resend failed: subject=%r to=%s", subject, to_email)
+            raise
+        return
+
+    # ── SMTP fallback path ───────────────────────────────────────────────────
     if not settings.SMTP_HOST:
-        logger.warning("SMTP not configured — skipping email to %s", to_email)
+        logger.warning("No email provider configured — skipping email to %s", to_email)
         return
 
     msg = MIMEMultipart("alternative")
@@ -186,6 +207,8 @@ async def _send(to_email: str, subject: str, html: str, plain: str) -> None:
     msg.attach(MIMEText(plain, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
+    # Port 465 = implicit SSL; port 587/25 = STARTTLS
+    use_ssl = settings.SMTP_PORT == 465
     try:
         await aiosmtplib.send(
             msg,
@@ -193,13 +216,12 @@ async def _send(to_email: str, subject: str, html: str, plain: str) -> None:
             port=settings.SMTP_PORT,
             username=settings.SMTP_USERNAME or None,
             password=settings.SMTP_PASSWORD or None,
-            use_tls=False,
-            start_tls=settings.SMTP_TLS,
+            use_tls=use_ssl,
+            start_tls=(settings.SMTP_TLS and not use_ssl),
         )
-        logger.info("Email sent: subject=%r to=%s", subject, to_email)
+        logger.info("Email sent via SMTP: subject=%r to=%s", subject, to_email)
     except Exception:
-        # Log the error but never log credentials or the message body
-        logger.exception("Failed to send email to %s (subject=%r)", to_email, subject)
+        logger.exception("SMTP failed: subject=%r to=%s", subject, to_email)
         raise
 
 

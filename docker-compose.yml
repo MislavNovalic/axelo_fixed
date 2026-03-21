@@ -36,12 +36,15 @@ services:
       UPLOAD_DIR: /uploads
       ENVIRONMENT: development
       ALLOWED_ORIGINS: http://localhost:8080,http://localhost:5173,http://localhost:4173
-      # Phase 3 — OAuth
+      # OAuth SSO — set these in your .env file or DigitalOcean App Platform env vars
       GOOGLE_CLIENT_ID: ""
       GOOGLE_CLIENT_SECRET: ""
       GITHUB_CLIENT_ID: ""
       GITHUB_CLIENT_SECRET: ""
+      # Set to your public domain in production, e.g. https://axelo.dev
       FRONTEND_URL: "http://localhost:4173"
+      # Leave empty on Digital Ocean (Nginx proxies /api on same domain as frontend)
+      OAUTH_REDIRECT_BASE: ""
       # Phase 4 — AI
       ANTHROPIC_API_KEY: ""
       AI_ENABLED: "true"

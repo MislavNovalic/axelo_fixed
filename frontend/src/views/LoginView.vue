@@ -82,12 +82,36 @@
           <span v-else class="btn-loader"><span></span><span class="dot-2"></span><span class="dot-3"></span></span>
         </button>
 
-        <div class="demo-hint animate-field" style="--delay:0.62s">
+        <!-- SSO divider -->
+        <div class="sso-divider animate-field" style="--delay:0.60s">
+          <span>or continue with</span>
+        </div>
+
+        <!-- OAuth SSO buttons -->
+        <div class="sso-row animate-field" style="--delay:0.63s">
+          <button class="sso-btn" @click="oauthLogin('google')" :disabled="oauthLoading" type="button">
+            <svg class="sso-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Google
+          </button>
+          <button class="sso-btn" @click="oauthLogin('github')" :disabled="oauthLoading" type="button">
+            <svg class="sso-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+            </svg>
+            GitHub
+          </button>
+        </div>
+
+        <div class="demo-hint animate-field" style="--delay:0.68s">
           <span class="hint-label">Demo</span>
           <button class="hint-btn" @click="fillDemo">Click to fill demo credentials</button>
         </div>
 
-        <div class="auth-switch animate-field" style="--delay:0.68s">
+        <div class="auth-switch animate-field" style="--delay:0.74s">
           Don't have an account? <router-link to="/register">Sign up free</router-link>
         </div>
       </div>
@@ -127,7 +151,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/api'
 
@@ -141,10 +165,10 @@ const mottos = [
 
 const currentMotto = ref(0)
 let mottoTimer = null
-onMounted(() => { mottoTimer = setInterval(() => { currentMotto.value = (currentMotto.value + 1) % mottos.length }, 4000) })
 onUnmounted(() => clearInterval(mottoTimer))
 
 const router   = useRouter()
+const route    = useRoute()
 const auth     = useAuthStore()
 const step     = ref('credentials')
 const email    = ref('')
@@ -152,6 +176,7 @@ const password = ref('')
 const totpCode = ref('')
 const tempToken    = ref('')
 const loading      = ref(false)
+const oauthLoading = ref(false)
 const error        = ref('')
 const unverified   = ref(false)
 const unverifiedEmail = ref('')
@@ -162,9 +187,49 @@ const passFocused  = ref(false)
 const codeFocused  = ref(false)
 const showPass     = ref(false)
 
+onMounted(async () => {
+  mottoTimer = setInterval(() => { currentMotto.value = (currentMotto.value + 1) % mottos.length }, 4000)
+
+  // ── Handle OAuth callback ────────────────────────────────────────────────
+  // The router guard already called consumeOAuthToken() and stored the token.
+  // If we landed on the /oauth/:provider/callback route and are now logged in,
+  // just forward to the dashboard.
+  if (route.name === 'OAuthCallback') {
+    if (auth.token) {
+      try { await auth.fetchMe() } catch { /* fetchMe calls logout on failure */ }
+      if (auth.isLoggedIn) { router.push('/'); return }
+    }
+    // Token missing — show a generic error on the login screen
+    error.value = 'Sign-in with OAuth failed. Please try again.'
+    return
+  }
+
+  // ── Handle oauth_error query param (backend redirect on failure) ─────────
+  const oauthError = route.query.oauth_error
+  if (oauthError) {
+    const messages = {
+      access_denied:        'Access was denied. Please allow the required permissions and try again.',
+      invalid_state:        'Session expired during sign-in. Please try again.',
+      exchange_failed:      'Could not connect to the OAuth provider. Please try again.',
+      account_inactive:     'Your account is inactive. Please contact support.',
+      unsupported_provider: 'Unsupported sign-in provider.',
+    }
+    error.value = messages[oauthError] || 'OAuth sign-in failed. Please try again.'
+    shake()
+  }
+})
+
 function fillDemo() {
   email.value    = 'alex@axelo.dev'
   password.value = 'password123'
+}
+
+function oauthLogin(provider) {
+  oauthLoading.value = true
+  // Navigate the full browser window to the backend OAuth init endpoint.
+  // The backend redirects to the provider, which redirects back to the
+  // backend callback, which issues a JWT and redirects to the frontend.
+  window.location.href = `/api/auth/oauth/${provider}`
 }
 
 async function submit() {
@@ -309,5 +374,14 @@ function shake() {
 .motto-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.15); cursor: pointer; transition: background 0.3s, transform 0.3s; }
 .motto-dot.active { background: var(--accent2); transform: scale(1.4); }
 .motto-dot:hover:not(.active) { background: rgba(255,255,255,0.35); }
+/* SSO */
+.sso-divider { display: flex; align-items: center; gap: 10px; margin: 1rem 0 0.75rem; }
+.sso-divider::before, .sso-divider::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
+.sso-divider span { font-size: 0.72rem; color: var(--text3); white-space: nowrap; }
+.sso-row { display: flex; gap: 10px; margin-bottom: 0.25rem; }
+.sso-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; background: var(--bg); border: 1.5px solid var(--border2); border-radius: 10px; color: var(--text2); font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: border-color 0.2s, background 0.2s, color 0.15s; font-family: var(--font-body); }
+.sso-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--bg2); color: var(--text); }
+.sso-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.sso-icon { width: 18px; height: 18px; flex-shrink: 0; }
 @media (max-width: 640px) { .auth-screen { grid-template-columns: 1fr; } .auth-left { display: none; } }
 </style>

@@ -1,16 +1,20 @@
 """
-Auth router — registration, login, email verification, 2FA.
-OAuth (Google/GitHub) and CAPTCHA removed — not configured on this deployment.
+Auth router — registration, login, email verification, 2FA, OAuth SSO (Google + GitHub).
 """
 import hashlib
 import json
 import os
 import secrets
+import time
+import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
+import httpx
 import pyotp
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
@@ -29,9 +33,115 @@ from app.core.security import (
 from app.core.email import send_verification_email
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# ── OAuth state store (CSRF protection) ──────────────────────────────────────
+# Maps state token → (provider, timestamp). Single-process safe; for
+# multi-worker deployments move this to Redis via settings.REDIS_URL.
+_oauth_states: dict[str, tuple[str, float]] = {}
+
+def _clean_oauth_states() -> None:
+    """Purge states older than 10 minutes."""
+    cutoff = time.time() - 600
+    expired = [k for k, (_, ts) in _oauth_states.items() if ts < cutoff]
+    for k in expired:
+        del _oauth_states[k]
+
+def _oauth_redirect_base() -> str:
+    """
+    Base URL used to build the callback URI that OAuth providers redirect to.
+    On Digital Ocean (single domain, Nginx proxies /api → backend) this is the
+    same as FRONTEND_URL.  Override with OAUTH_REDIRECT_BASE if your setup
+    differs (e.g. standalone backend on a different port in local dev).
+    """
+    return settings.OAUTH_REDIRECT_BASE or settings.FRONTEND_URL
+
+
+# ── OAuth token exchange helpers ──────────────────────────────────────────────
+
+async def _exchange_google(code: str, redirect_uri: str) -> dict:
+    """Exchange Google auth code for user info. Returns dict with email/id/name/avatar."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        token_resp = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": settings.GOOGLE_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        )
+        token_resp.raise_for_status()
+        access_token = token_resp.json()["access_token"]
+
+        userinfo_resp = await client.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        userinfo_resp.raise_for_status()
+        data = userinfo_resp.json()
+
+    if not data.get("email_verified"):
+        raise ValueError("Google account email is not verified")
+
+    return {
+        "email":  data["email"],
+        "id":     data["sub"],
+        "name":   data.get("name", ""),
+        "avatar": data.get("picture"),
+    }
+
+
+async def _exchange_github(code: str, redirect_uri: str) -> dict:
+    """Exchange GitHub auth code for user info. Returns dict with email/id/name/avatar."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        token_resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            data={
+                "code": code,
+                "client_id": settings.GITHUB_CLIENT_ID,
+                "client_secret": settings.GITHUB_CLIENT_SECRET,
+                "redirect_uri": redirect_uri,
+            },
+            headers={"Accept": "application/json"},
+        )
+        token_resp.raise_for_status()
+        token_data = token_resp.json()
+        if "error" in token_data:
+            raise ValueError(f"GitHub token error: {token_data.get('error_description', token_data['error'])}")
+        access_token = token_data["access_token"]
+
+        gh_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        user_resp = await client.get("https://api.github.com/user", headers=gh_headers)
+        user_resp.raise_for_status()
+        user_data = user_resp.json()
+
+        # GitHub may hide email — fetch from the emails endpoint
+        email = user_data.get("email")
+        if not email:
+            emails_resp = await client.get("https://api.github.com/user/emails", headers=gh_headers)
+            emails_resp.raise_for_status()
+            emails = emails_resp.json()
+            primary = next((e for e in emails if e.get("primary") and e.get("verified")), None)
+            if not primary:
+                raise ValueError("No verified primary email found in GitHub account")
+            email = primary["email"]
+
+    return {
+        "email":  email,
+        "id":     str(user_data["id"]),
+        "name":   user_data.get("name") or user_data.get("login", ""),
+        "avatar": user_data.get("avatar_url"),
+    }
 
 
 # ── Pydantic request bodies ───────────────────────────────────────────────────
@@ -227,6 +337,144 @@ def login_form(request: Request, form_data: OAuth2PasswordRequestForm = Depends(
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+# ── OAuth SSO — Google & GitHub ───────────────────────────────────────────────
+
+@router.get("/oauth/{provider}", include_in_schema=False)
+def oauth_init(provider: str):
+    """
+    Step 1 — redirect the browser to the provider's authorization page.
+    The frontend navigates to this URL directly (window.location.href).
+    """
+    if provider not in ("google", "github"):
+        raise HTTPException(status_code=400, detail="Unsupported OAuth provider")
+
+    if provider == "google" and not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google OAuth is not configured on this server")
+    if provider == "github" and not settings.GITHUB_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="GitHub OAuth is not configured on this server")
+
+    state = secrets.token_urlsafe(32)
+    _clean_oauth_states()
+    _oauth_states[state] = (provider, time.time())
+
+    base = _oauth_redirect_base()
+    callback_uri = f"{base}/api/auth/oauth/{provider}/callback"
+
+    if provider == "google":
+        params = urlencode({
+            "client_id":     settings.GOOGLE_CLIENT_ID,
+            "redirect_uri":  callback_uri,
+            "response_type": "code",
+            "scope":         "openid email profile",
+            "state":         state,
+            "access_type":   "offline",
+            "prompt":        "select_account",
+        })
+        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
+    else:  # github
+        params = urlencode({
+            "client_id":    settings.GITHUB_CLIENT_ID,
+            "redirect_uri": callback_uri,
+            "scope":        "read:user user:email",
+            "state":        state,
+        })
+        auth_url = f"https://github.com/login/oauth/authorize?{params}"
+
+    return RedirectResponse(auth_url, status_code=302)
+
+
+@router.get("/oauth/{provider}/callback", include_in_schema=False)
+async def oauth_callback(
+    provider: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    code: str = None,
+    state: str = None,
+    error: str = None,
+):
+    """
+    Step 2 — OAuth provider redirects here with ?code=&state=.
+    We exchange the code for user info, create/find the user, issue a JWT,
+    then redirect the browser to the frontend with #token=<jwt> in the hash
+    (never in the query string, to keep it out of server logs).
+    """
+    frontend = settings.FRONTEND_URL
+    error_redirect = f"{frontend}/login?oauth_error="
+
+    if error or not code or not state:
+        logger.warning("OAuth %s init error: %s", provider, error)
+        return RedirectResponse(f"{error_redirect}access_denied", status_code=302)
+
+    if provider not in ("google", "github"):
+        return RedirectResponse(f"{error_redirect}unsupported_provider", status_code=302)
+
+    if state not in _oauth_states:
+        logger.warning("OAuth %s: invalid or expired state", provider)
+        return RedirectResponse(f"{error_redirect}invalid_state", status_code=302)
+
+    stored_provider, ts = _oauth_states.pop(state)
+    if stored_provider != provider or time.time() - ts > 600:
+        logger.warning("OAuth %s: state mismatch or expired", provider)
+        return RedirectResponse(f"{error_redirect}invalid_state", status_code=302)
+
+    base = _oauth_redirect_base()
+    callback_uri = f"{base}/api/auth/oauth/{provider}/callback"
+
+    try:
+        if provider == "google":
+            user_info = await _exchange_google(code, callback_uri)
+        else:
+            user_info = await _exchange_github(code, callback_uri)
+    except Exception as exc:
+        logger.error("OAuth %s exchange failed: %s", provider, exc)
+        return RedirectResponse(f"{error_redirect}exchange_failed", status_code=302)
+
+    email  = user_info["email"].lower().strip()
+    name   = clamp_str((user_info.get("name") or email.split("@")[0]).strip(), MAX_PROJECT_NAME)
+    avatar = user_info.get("avatar")
+
+    # Find existing user or create one
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        # Link OAuth provider if account was email-only
+        if not user.oauth_provider:
+            user.oauth_provider = provider
+            user.oauth_id = str(user_info["id"])
+        # OAuth login auto-verifies the email
+        if not user.email_verified:
+            user.email_verified = True
+        if avatar and not user.avatar_url:
+            user.avatar_url = avatar
+        db.commit()
+    else:
+        user = User(
+            email=email,
+            full_name=name,
+            hashed_password=None,          # OAuth-only account
+            is_active=True,
+            email_verified=True,           # Provider already verified
+            oauth_provider=provider,
+            oauth_id=str(user_info["id"]),
+            avatar_url=avatar,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    if not user.is_active:
+        logger.warning("OAuth login attempt for inactive user %s", email)
+        return RedirectResponse(f"{error_redirect}account_inactive", status_code=302)
+
+    jwt_token = create_access_token({"sub": str(user.id)})
+    logger.info("OAuth %s login success for user %s (id=%s)", provider, email, user.id)
+
+    # Redirect to frontend OAuth callback route with token in hash fragment
+    return RedirectResponse(
+        f"{frontend}/oauth/{provider}/callback#token={jwt_token}",
+        status_code=302,
+    )
 
 
 # ── Two-Factor Authentication ─────────────────────────────────────────────────

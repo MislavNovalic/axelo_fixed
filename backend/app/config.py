@@ -7,12 +7,17 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
 
-    # OAuth (Phase 3)
+    # OAuth SSO — Google & GitHub
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:3000"
+    # Base URL for OAuth redirect_uri registered with providers.
+    # On Digital Ocean (Nginx proxies /api on the same domain) leave this empty
+    # and it will default to FRONTEND_URL automatically.
+    # Override only if your backend is on a different URL than the frontend.
+    OAUTH_REDIRECT_BASE: str = ""
 
     # Phase 4 — AI features
     ANTHROPIC_API_KEY: str = ""
